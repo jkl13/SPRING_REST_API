@@ -63,8 +63,16 @@ public class EventController {
     }
 
     @GetMapping
-    public ResponseEntity queryEvents(Pageable pageable, PagedResourcesAssembler<Event> assembler) {
+    public ResponseEntity queryEvents(Pageable pageable,
+                                      PagedResourcesAssembler<Event> assembler,
+                                      @RequestParam(defaultValue = "-1", required = false) int startBasePrice,
+                                      @RequestParam(defaultValue = "-1", required = false) int endBasePrice,
+                                      @RequestParam(required = false) EventStatus eventStatus
+    ) {
         Page<Event> page = this.eventRepository.findAll(pageable);
+        if(startBasePrice != -1 && endBasePrice != -1 && eventStatus != null){
+            page = this.eventRepository.findByEventStatusAndBasePriceBetween(eventStatus, startBasePrice, endBasePrice, pageable);
+        }
         var pagedResources = assembler.toModel(page, e -> new EventResource(e));
         pagedResources.add(Link.of("/docs/index.html#resources-events-list").withRel("profile"));
         return ResponseEntity.ok(pagedResources);
@@ -106,6 +114,7 @@ public class EventController {
 
         Event existingEvent = optionalEvent.get();
         this.modelMapper.map(eventDto, existingEvent);
+        existingEvent.update();
         Event savedEvent = this.eventRepository.save(existingEvent);
 
         EventResource eventResource = new EventResource(savedEvent);

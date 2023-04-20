@@ -2,6 +2,7 @@ package me.whiteship.demoinflearnrestapi.events;
 
 import me.whiteship.demoinflearnrestapi.common.BaseControllerTest;
 import me.whiteship.demoinflearnrestapi.common.TestDescription;
+import org.hamcrest.Matchers;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.hateoas.MediaTypes;
@@ -9,6 +10,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 import java.util.stream.IntStream;
 
 import static org.springframework.restdocs.headers.HeaderDocumentation.*;
@@ -210,6 +214,31 @@ public class EventControllerTests extends BaseControllerTest {
                 .andDo(document("get-an-event"))
         ;
     }
+    @Test
+    @TestDescription("이벤트 목록에 필터를 적용하여 조회하기.")
+    public void getEventWithFilter() throws Exception {
+        // Given
+        IntStream.range(0, 30).forEach(this::generateEvent);
+
+        // When & Then
+        this.mockMvc.perform(
+                get("/api/events")
+                        .param("startBasePrice", "100")
+                        .param("endBasePrice", "200")
+                        .param("eventStatus", EventStatus.PUBLISHED.toString()))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("page").exists())
+                .andExpect(jsonPath("_embedded.eventList[0]._links.self").exists())
+                .andExpect(jsonPath("_embedded.eventList.*.eventStatus", Matchers.anyOf(Matchers.hasItem(EventStatus.PUBLISHED.toString()))))
+                .andExpect(jsonPath("_embedded.eventList.*.basePrice", Matchers.anyOf(Matchers.hasItem(
+                                Matchers.allOf(Matchers.greaterThanOrEqualTo(100), Matchers.lessThanOrEqualTo(200))
+                        ))))
+                .andExpect(jsonPath("_links.self").exists())
+                .andExpect(jsonPath("_links.profile").exists())
+                .andDo(document("query-events-filtered"))
+        ;
+    }
 
     @Test
     @TestDescription("없는 이벤트를 조회 했을 때 404 응답 받기.")
@@ -235,6 +264,26 @@ public class EventControllerTests extends BaseControllerTest {
                 .andDo(print())
                 .andExpect((status().isOk()))
                 .andExpect((jsonPath("name").value(eventName)))
+                .andExpect((jsonPath("_links.self").exists()))
+        ;
+    }
+
+    @Test
+    @TestDescription("이벤트를 무료로 변경하기.")
+    public void updateEventFree() throws Exception {
+        //Given
+        Event event = this.generateEvent(200);
+        EventDto eventDto = this.modelMapper.map(event, EventDto.class);
+        eventDto.setMaxPrice(0);
+        eventDto.setBasePrice(0);
+
+        //When & Then
+        this.mockMvc.perform(put("/api/events/{id}", event.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(this.objectMapper.writeValueAsString(eventDto)))
+                .andDo(print())
+                .andExpect((status().isOk()))
+                .andExpect((jsonPath("free").value(true)))
                 .andExpect((jsonPath("_links.self").exists()))
         ;
     }
@@ -290,6 +339,8 @@ public class EventControllerTests extends BaseControllerTest {
     }
 
     private Event generateEvent(int i) {
+        List<EventStatus> eventStatusList = Arrays.asList(EventStatus.DRAFT, EventStatus.BEGAN_ENROLLMENT, EventStatus.PUBLISHED);
+        Random rand = new Random();
         Event event = Event.builder()
                 .name("event " + i)
                 .description("test event")
@@ -297,13 +348,13 @@ public class EventControllerTests extends BaseControllerTest {
                 .closeEnrollmentDateTime((LocalDateTime.of(2023, 4, 12,12,57 )))
                 .beginEventDateTime((LocalDateTime.of(2023, 4, 13,12,57 )))
                 .endEventDateTime((LocalDateTime.of(2023, 4, 14,12,57 )))
-                .basePrice(100)
+                .basePrice(rand.nextInt() % 200)//200미만의 랜덤 price
                 .maxPrice(200)
                 .limitOfEnrollment(100)
                 .location("강남역")
                 .free(false)
                 .offline(true)
-                .eventStatus(EventStatus.DRAFT)
+                .eventStatus(eventStatusList.get(rand.nextInt(eventStatusList.size())))
                 .build();
 
         return this.eventRepository.save(event);
